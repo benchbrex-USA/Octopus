@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.rules import RULE_ENGINE_VERSION
 
 client = TestClient(app)
 
@@ -28,6 +29,7 @@ def test_household_risk_detects_emi_trap() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["risk_level"] == "critical"
+    assert body["rule_version"] == RULE_ENGINE_VERSION
     assert body["debt_to_income_ratio"] >= 0.5
     assert any(signal["name"] == "EMI trap risk" for signal in body["signals"])
 
@@ -49,4 +51,24 @@ def test_household_risk_stable_baseline() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["risk_level"] == "low"
+    assert body["rule_version"] == RULE_ENGINE_VERSION
     assert body["liquidity_runway_months"] >= 7
+
+
+def test_household_risk_is_deterministic_for_same_input() -> None:
+    payload = {
+        "monthly_income": 70000,
+        "fixed_expenses": 30000,
+        "emi_payments": 14000,
+        "credit_card_due": 12000,
+        "savings_balance": 60000,
+        "monthly_medical_costs": 1000,
+        "dependents": 1,
+    }
+
+    response_a = client.post("/v1/risk/household", json=payload)
+    response_b = client.post("/v1/risk/household", json=payload)
+
+    assert response_a.status_code == 200
+    assert response_b.status_code == 200
+    assert response_a.json() == response_b.json()
